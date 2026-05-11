@@ -268,7 +268,9 @@
       "Equipment",
       "Food",
       "Transport",
-      "Misc"
+      "Misc",
+      "Activities",
+      "Insurance"
     ],
     "baseCurrency": "GBP",
     "exchangeRates": {

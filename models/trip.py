@@ -7,6 +7,18 @@ from models.options import Option
 from models.traveller import Traveller
 
 
+DEFAULT_CATEGORIES = [
+    "Flights",
+    "Accommodation",
+    "Equipment",
+    "Food",
+    "Transport",
+    "Activities",
+    "Insurance",
+    "Misc",
+]
+
+
 @dataclass
 class Trip:
     name: str
@@ -15,16 +27,7 @@ class Trip:
     costItems: List[CostItem] = field(default_factory=list)
     options: List[Option] = field(default_factory=list)
     accommodation: Optional[Accommodation] = None
-    categories: List[str] = field(
-        default_factory=lambda: [
-            "Flights",
-            "Accommodation",
-            "Equipment",
-            "Food",
-            "Transport",
-            "Misc",
-        ]
-    )
+    categories: List[str] = field(default_factory=lambda: DEFAULT_CATEGORIES.copy())
     baseCurrency: str = "GBP"
     exchangeRates: dict = field(default_factory=dict)
     notes: str = ""

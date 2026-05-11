@@ -91,16 +91,6 @@ st.markdown("""
 
 NEW_TRIP_BASE_NAME = "New Trip"
 CURRENCIES = ["GBP", "EUR", "USD", "AUD", "CAD", "JPY"]
-COMMON_CATEGORIES = [
-    "Flights",
-    "Accommodation",
-    "Equipment",
-    "Food",
-    "Transport",
-    "Activities",
-    "Insurance",
-    "Misc",
-]
 TABS = ["Trip Setup", "Cost Items", "Accommodation", "Options", "Travellers", "Summary", "Notes"]
 TRIP_SCOPED_WIDGET_PREFIXES = (
     "accom_total_cost_",
@@ -116,6 +106,8 @@ TRIP_SCOPED_WIDGET_PREFIXES = (
 ENTRY_DIALOG_KEY = "_entry_dialog"
 ENTRY_NOTICE_KEY = "_entry_notice"
 CONFIRM_ACTION_KEY = "_confirm_action"
+CATEGORY_NOTICE_KEY = "_category_notice"
+NEW_CATEGORY_INPUT_KEY = "new_category"
 TRIP_NAME_INPUT_KEY = "trip_name_input"
 TRIP_NAME_INPUT_RENDERED_KEY = "_trip_name_input_rendered"
 TRIP_NAME_INPUT_PENDING_KEY = "_pending_trip_name_input"
@@ -414,6 +406,71 @@ def selected_currency_index(currency, fallback_currency=None):
 
 def option_names(trip):
     return [option.name for option in trip.options]
+
+
+def normalize_category_name(value):
+    return " ".join(value.strip().split())
+
+
+def category_exists(trip, category):
+    normalized = category.casefold()
+    return any(existing.casefold() == normalized for existing in trip.categories)
+
+
+def category_usage_count(trip, category):
+    return sum(1 for item in trip.costItems if item.category == category)
+
+
+def set_category_notice(level, message):
+    st.session_state[CATEGORY_NOTICE_KEY] = {
+        "level": level,
+        "message": message,
+    }
+
+
+def show_category_notice():
+    notice = st.session_state.pop(CATEGORY_NOTICE_KEY, None)
+    if not notice:
+        return
+
+    getattr(st, notice["level"])(notice["message"])
+
+
+def add_category_from_input():
+    category = normalize_category_name(st.session_state.get(NEW_CATEGORY_INPUT_KEY, ""))
+    if not category:
+        set_category_notice("warning", "Enter a category name first.")
+        return
+
+    if category_exists(trip, category):
+        set_category_notice("info", "Category already exists.")
+        return
+
+    trip.categories.append(category)
+    st.session_state[NEW_CATEGORY_INPUT_KEY] = ""
+    clear_widget_state_by_prefix("cost_cat_")
+    persist_trip()
+    set_category_notice("success", f"Added category: {category}")
+
+
+def remove_category(category):
+    usage_count = category_usage_count(trip, category)
+    if usage_count:
+        item_label = "cost item" if usage_count == 1 else "cost items"
+        set_category_notice(
+            "warning",
+            f"Reassign or delete {usage_count} {item_label} before removing {category}.",
+        )
+        return
+
+    if len(trip.categories) <= 1:
+        set_category_notice("warning", "Add another category before removing this one.")
+        return
+
+    trip.categories = [existing for existing in trip.categories if existing != category]
+    clear_widget_state_by_prefix("cost_cat_")
+    persist_trip()
+    set_category_notice("success", f"Removed category: {category}")
 
 
 def trip_widget_key(name):
@@ -958,35 +1015,53 @@ with tabs[0]:
             clear_current_trip_data,
         )
 
-    with st.expander("Manage Categories"):
-        st.write("Current categories:", ", ".join(trip.categories))
-
-        st.subheader("Quick Add Common Categories")
-        cols = st.columns(4)
-        for i, cat in enumerate(COMMON_CATEGORIES):
-            with cols[i % 4]:
-                if st.button(cat, key=f"add_common_{cat}"):
-                    if cat not in trip.categories:
-                        trip.categories.append(cat)
-                        st.success(f"Added category: {cat}")
-                        st.rerun()
-                    else:
-                        st.info(f"Category '{cat}' already exists")
-
-        st.divider()
-        new_category = st.text_input("Add custom category", key="new_category")
-        if st.button("Add Custom Category"):
-            normalized = new_category.strip()
-            if normalized and normalized not in trip.categories:
-                trip.categories.append(normalized)
-                st.success(f"Added category: {normalized}")
-            elif not normalized:
-                st.warning("Enter a category name first.")
-            else:
-                st.info("Category already exists.")
-
 with tabs[1]:
     st.header("Cost Items")
+
+    with st.expander("Manage Categories"):
+        show_category_notice()
+
+        add_col, button_col = st.columns([3, 1])
+        with add_col:
+            st.text_input("Category name", key=NEW_CATEGORY_INPUT_KEY)
+        with button_col:
+            st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
+            st.button(
+                "Add category",
+                key="add_category",
+                on_click=add_category_from_input,
+                width="stretch",
+            )
+
+        st.divider()
+
+        for idx, category in enumerate(trip.categories):
+            usage_count = category_usage_count(trip, category)
+            usage_label = (
+                f"{usage_count} cost item"
+                if usage_count == 1
+                else f"{usage_count} cost items"
+            )
+            name_col, usage_col, action_col = st.columns([4, 2, 1])
+            with name_col:
+                st.write(category)
+            with usage_col:
+                st.caption(usage_label)
+            with action_col:
+                st.button(
+                    "Remove",
+                    key=f"remove_category_{idx}",
+                    disabled=usage_count > 0 or len(trip.categories) <= 1,
+                    help=(
+                        "Reassign or delete cost items using this category first."
+                        if usage_count > 0
+                        else None
+                    ),
+                    on_click=remove_category,
+                    args=(category,),
+                    width="stretch",
+                )
+
     show_entry_notice("cost_item")
     if st.button("Add cost item", width="stretch"):
         open_entry_dialog("cost_item")
